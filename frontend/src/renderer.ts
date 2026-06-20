@@ -233,14 +233,36 @@ export class Renderer {
   drawHarmonicClassroomLine(
     p1: ScreenPoint,
     p2: ScreenPoint,
-    isHarmonic: boolean,
+    status: 'connectable' | 'harmonic-only' | 'disharmonic',
     time: number
   ): void {
     const pulse = Math.sin(time * 3) * 0.3 + 0.7;
 
-    const color = isHarmonic
-      ? { r: 100, g: 255, b: 180 }
-      : { r: 255, g: 100, b: 100 };
+    let color: { r: number; g: number; b: number };
+    let label: string;
+    let glowAlpha: number;
+    let lineAlpha: number;
+
+    switch (status) {
+      case 'connectable':
+        color = { r: 0, g: 255, b: 136 };
+        label = '✓ 可以连接';
+        glowAlpha = 0.45;
+        lineAlpha = 0.95;
+        break;
+      case 'harmonic-only':
+        color = { r: 255, g: 190, b: 60 };
+        label = '⚠ 频率匹配但非本关连线';
+        glowAlpha = 0.4;
+        lineAlpha = 0.9;
+        break;
+      default:
+        color = { r: 255, g: 100, b: 100 };
+        label = '✗ 频率不合拍';
+        glowAlpha = 0.25;
+        lineAlpha = 0.7;
+        break;
+    }
 
     const dashLength = 10;
     const dashOffset = (time * 40) % (dashLength * 2);
@@ -249,7 +271,7 @@ export class Renderer {
       this.ctx.beginPath();
       this.ctx.moveTo(p1.x, p1.y);
       this.ctx.lineTo(p2.x, p2.y);
-      const alpha = (isHarmonic ? 0.4 : 0.25) * pulse / pass;
+      const alpha = glowAlpha * pulse / pass;
       this.ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
       this.ctx.lineWidth = 4 + pass * 6;
       this.ctx.lineCap = 'round';
@@ -259,7 +281,7 @@ export class Renderer {
     this.ctx.beginPath();
     this.ctx.moveTo(p1.x, p1.y);
     this.ctx.lineTo(p2.x, p2.y);
-    this.ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${(isHarmonic ? 0.9 : 0.7) * pulse})`;
+    this.ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${lineAlpha * pulse})`;
     this.ctx.lineWidth = 3;
     this.ctx.lineCap = 'round';
     this.ctx.setLineDash([dashLength, dashLength]);
@@ -283,6 +305,32 @@ export class Renderer {
       this.ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.8 * pulse})`;
       this.ctx.fill();
     }
+
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const labelPaddingX = 12;
+    const labelPaddingY = 7;
+
+    this.ctx.font = 'bold 13px "Microsoft YaHei", sans-serif';
+    const textWidth = this.ctx.measureText(label).width;
+    const bgX = midX - textWidth / 2 - labelPaddingX;
+    const bgY = midY - 10 - labelPaddingY;
+    const bgW = textWidth + labelPaddingX * 2;
+    const bgH = 20 + labelPaddingY * 2;
+    const bgR = 8;
+
+    this.ctx.beginPath();
+    this.ctx.roundRect(bgX, bgY, bgW, bgH, bgR);
+    this.ctx.fillStyle = `rgba(10, 12, 30, ${0.85 * pulse})`;
+    this.ctx.fill();
+    this.ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.9 * pulse})`;
+    this.ctx.lineWidth = 1.5;
+    this.ctx.stroke();
+
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${pulse})`;
+    this.ctx.fillText(label, midX, midY - 10);
   }
 
   drawCurve(

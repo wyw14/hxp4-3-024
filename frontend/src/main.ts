@@ -189,8 +189,9 @@ function clearHarmonicPanel(_anchorPoints: Array<{ id: string; name?: string; fr
   slot2Freq.textContent = '';
   ratioTitle.textContent = '等待选择两颗星';
   ratioNumbers.textContent = '? : ?';
-  ratioNumbers.classList.remove('harmonic', 'disharmonic');
+  ratioNumbers.classList.remove('harmonic', 'warn', 'disharmonic');
   ratioStatus.style.display = 'none';
+  cardResult.classList.remove('warn', 'fail');
   explainSection.style.display = 'none';
   panelTip.textContent = '💡 在星空中点击两颗主星，分析它们的频率关系';
   btnClassroomClear.style.display = 'none';
@@ -242,8 +243,9 @@ function updateHarmonicPanel(
       ratioTitle.textContent = '再选一颗星继续分析';
       ratioNumbers.textContent = '? : ?';
     }
-    ratioNumbers.classList.remove('harmonic', 'disharmonic');
+    ratioNumbers.classList.remove('harmonic', 'warn', 'disharmonic');
     ratioStatus.style.display = 'none';
+    cardResult.classList.remove('warn', 'fail');
     explainSection.style.display = 'none';
     panelTip.textContent = state.selectedStarIds.length === 1
       ? '💡 再点击另一颗主星进行对比分析'
@@ -252,38 +254,58 @@ function updateHarmonicPanel(
   }
 
   ratioTitle.textContent = analysis.explanation.title;
-  ratioNumbers.classList.remove('harmonic', 'disharmonic');
+  ratioNumbers.classList.remove('harmonic', 'warn', 'disharmonic');
 
   const [num, den] = analysis.simplifiedRatio;
   const g = gcdUi(num, den);
   const reducedNum = num / g;
   const reducedDen = den / g;
 
-  if (analysis.isHarmonic) {
-    ratioNumbers.classList.add('harmonic');
-    ratioNumbers.textContent = `${reducedNum} : ${reducedDen}`;
-    ratioStatus.className = 'ratio-status yes';
-    ratioStatus.textContent = '✨ 整数倍谐波 · 可以连接';
-  } else {
-    ratioNumbers.classList.add('disharmonic');
-    ratioNumbers.textContent = `${num} : ${den}`;
-    ratioStatus.className = 'ratio-status no';
-    ratioStatus.textContent = '❌ 非简单整数比 · 无法连接';
+  cardResult.classList.remove('warn', 'fail');
+
+  switch (analysis.connectStatus) {
+    case 'connectable':
+      ratioNumbers.classList.add('harmonic');
+      ratioNumbers.textContent = `${reducedNum} : ${reducedDen}`;
+      ratioStatus.className = 'ratio-status yes';
+      ratioStatus.textContent = '✨ 本关星座连线 · 可以连接';
+      break;
+    case 'harmonic-only':
+      ratioNumbers.classList.add('warn');
+      ratioNumbers.textContent = `${reducedNum} : ${reducedDen}`;
+      ratioStatus.className = 'ratio-status warn';
+      ratioStatus.textContent = '⚠ 频率匹配 · 但非本关连线';
+      cardResult.classList.add('warn');
+      break;
+    default:
+      ratioNumbers.classList.add('disharmonic');
+      ratioNumbers.textContent = `${num} : ${den}`;
+      ratioStatus.className = 'ratio-status no';
+      ratioStatus.textContent = '❌ 非简单整数比 · 无法连接';
+      cardResult.classList.add('fail');
+      break;
   }
   ratioStatus.style.display = 'inline-block';
 
   explainSection.style.display = 'block';
 
   cardResult.textContent = analysis.explanation.canConnect;
-  cardResult.classList.toggle('fail', !analysis.isHarmonic);
 
   cardMath.textContent = analysis.explanation.mathDetail;
   cardFact.textContent = analysis.explanation.funFact;
   cardVisual.textContent = analysis.explanation.visualHint;
 
-  panelTip.textContent = analysis.isHarmonic
-    ? '🎯 发现谐波共振！可以从一颗星拖动到另一颗星尝试连线'
-    : '💡 试试其他星星组合，寻找成简单整数比的频率';
+  switch (analysis.connectStatus) {
+    case 'connectable':
+      panelTip.textContent = '🎯 这是本关的星座连线！退出课堂后可从一颗星拖动到另一颗星连接';
+      break;
+    case 'harmonic-only':
+      panelTip.textContent = '🔍 频率完美匹配！但这不是本关的指定连线，试试其他星星组合';
+      break;
+    default:
+      panelTip.textContent = '💡 试试其他星星组合，寻找成简单整数比的频率';
+      break;
+  }
 }
 
 function gcdUi(a: number, b: number): number {

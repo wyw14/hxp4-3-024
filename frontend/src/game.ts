@@ -559,7 +559,7 @@ export class Game {
           this.renderer.drawHarmonicClassroomLine(
             this.renderer.getAnchorScreenPos(a1, this.state.rotationOffset),
             this.renderer.getAnchorScreenPos(a2, this.state.rotationOffset),
-            analysis?.isHarmonic ?? false,
+            analysis?.connectStatus ?? 'disharmonic',
             this.state.time
           );
         }

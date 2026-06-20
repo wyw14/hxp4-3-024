@@ -168,6 +168,8 @@ export function gcd(a: number, b: number): number {
   return a || 1;
 }
 
+export type ConnectStatus = 'connectable' | 'harmonic-only' | 'disharmonic';
+
 export interface HarmonicAnalysis {
   freq1: number;
   freq2: number;
@@ -177,6 +179,8 @@ export interface HarmonicAnalysis {
   rawRatio: number;
   isHarmonic: boolean;
   isDefinedEdge: boolean;
+  canConnectInLevel: boolean;
+  connectStatus: ConnectStatus;
   tolerance: number;
   beatsPerCycle?: number;
   explanation: {
@@ -215,12 +219,22 @@ export function analyzeHarmonicPair(
     (e.from === id1 && e.to === id2) || (e.from === id2 && e.to === id1)
   );
 
+  const canConnectInLevel = isHarmonic && isDefinedEdge;
+  let connectStatus: ConnectStatus;
+  if (canConnectInLevel) {
+    connectStatus = 'connectable';
+  } else if (isHarmonic) {
+    connectStatus = 'harmonic-only';
+  } else {
+    connectStatus = 'disharmonic';
+  }
+
   const beatsPerCycle = isHarmonic ? Math.abs(num - den) : undefined;
 
   const explanation = generateExplanation(
     freq1, freq2, name1, name2,
     reducedNum, reducedDen, rawRatio,
-    isHarmonic, isDefinedEdge, beatsPerCycle
+    isHarmonic, isDefinedEdge, connectStatus, beatsPerCycle
   );
 
   return {
@@ -229,6 +243,8 @@ export function analyzeHarmonicPair(
     rawRatio,
     isHarmonic,
     isDefinedEdge,
+    canConnectInLevel,
+    connectStatus,
     tolerance: EPSILON,
     beatsPerCycle,
     explanation
@@ -260,7 +276,8 @@ function findSimpleRatio(value: number, max: number, epsilon: number): [number, 
 function generateExplanation(
   f1: number, f2: number, n1: string, n2: string,
   num: number, den: number, raw: number,
-  isHarmonic: boolean, isDefined: boolean,
+  isHarmonic: boolean, _isDefined: boolean,
+  status: ConnectStatus,
   beats: number | undefined
 ): HarmonicAnalysis['explanation'] {
   let title: string;
@@ -269,28 +286,7 @@ function generateExplanation(
   let funFact: string;
   let visualHint: string;
 
-  if (num === den) {
-    title = '🎵 完全同频共振';
-    canConnect = `✅ ${n1} 和 ${n2} 频率完全相同，它们能完美连接！`;
-    mathDetail = `两颗星都以 ${f1.toFixed(1)}Hz 闪烁，比例为 ${num}:${den}。\n数学上: ${f2.toFixed(1)} / ${f1.toFixed(1)} = ${raw.toFixed(3)} ≈ ${num / den}`;
-    funFact = `这就像两个合唱队员用完全相同的音高演唱，声音会叠加得更加洪亮！在物理学中，这被称为"完全共振"。`;
-    visualHint = `观察：这两颗星的闪烁节奏完全同步，亮暗时刻一模一样。`;
-  } else if (num === 1 || den === 1) {
-    const multiple = num === 1 ? den : num;
-    const faster = num > den ? n2 : n1;
-    const slower = num > den ? n1 : n2;
-    title = `🎶 完美${multiple}倍谐波`;
-    canConnect = `✅ ${n1} 和 ${n2} 成完美的${multiple}倍频率关系，可以连接！`;
-    mathDetail = `${faster}(${Math.max(f1, f2).toFixed(1)}Hz) 的频率是 ${slower}(${Math.min(f1, f2).toFixed(1)}Hz) 的${multiple}倍。\n比例 ${num}:${den}，数学上: ${f2.toFixed(1)} / ${f1.toFixed(1)} = ${raw.toFixed(3)} ≈ ${num / den}`;
-    funFact = getFunFactForRatio(num, den);
-    visualHint = `观察：${faster} 每闪 ${multiple} 次，${slower} 才闪 1 次。数数看，是不是这样？`;
-  } else if (isHarmonic) {
-    title = `🎼 优雅的 ${num}:${den} 和声`;
-    canConnect = `✅ ${n1} 和 ${n2} 形成 ${num}:${den} 的和谐比例，可以连接！`;
-    mathDetail = `频率比例为 ${num}:${den}，这是一个音乐中常见的纯律音程。\n数学上: ${f2.toFixed(1)} / ${f1.toFixed(1)} = ${raw.toFixed(3)} ≈ ${num / den}`;
-    funFact = getFunFactForRatio(num, den);
-    visualHint = `观察：${n1} 每闪 ${num} 次时，${n2} 正好闪 ${den} 次。它们会每 ${num * den} 次闪烁"重合"一次！`;
-  } else {
+  if (status === 'disharmonic') {
     const simpleNum = Math.round(raw);
     const diff = Math.abs(raw - simpleNum);
     title = '💫 频率不合拍';
@@ -300,15 +296,43 @@ function generateExplanation(
     visualHint = `观察：这两颗星的闪烁杂乱无章，找不到明显的重复规律。`;
 
     if (diff < 0.2) {
-      const near = simpleNum;
-      mathDetail += `\n💡 提示：它们很接近 ${near}:1 的关系，但还差那么一点点！`;
+      mathDetail += `\n💡 提示：它们很接近 ${simpleNum}:1 的关系，但还差那么一点点！`;
     }
-  }
+  } else {
+    if (num === den) {
+      title = '🎵 完全同频共振';
+    } else if (num === 1 || den === 1) {
+      const multiple = num === 1 ? den : num;
+      title = `🎶 完美${multiple}倍谐波`;
+    } else {
+      title = `🎼 优雅的 ${num}:${den} 和声`;
+    }
 
-  if (isDefined && isHarmonic) {
-    canConnect += '\n🌟 这是星图中预设的一条星座连线！';
-  } else if (isHarmonic && !isDefined) {
-    canConnect += '\n📝 虽然谐波匹配，但这不是星座图中的指定连线。';
+    mathDetail = buildMathDetail(f1, f2, num, den, raw);
+    funFact = getFunFactForRatio(num, den);
+    visualHint = buildVisualHint(n1, n2, num, den);
+
+    if (status === 'connectable') {
+      if (num === den) {
+        canConnect = `✅ ${n1} 和 ${n2} 频率完全相同，可以连接！`;
+      } else if (num === 1 || den === 1) {
+        const multiple = num === 1 ? den : num;
+        canConnect = `✅ ${n1} 和 ${n2} 成完美的${multiple}倍频率关系，可以连接！`;
+      } else {
+        canConnect = `✅ ${n1} 和 ${n2} 形成 ${num}:${den} 的和谐比例，可以连接！`;
+      }
+      canConnect += '\n🌟 这是本关预设的星座连线，从一颗星拖动到另一颗星即可连接';
+    } else {
+      if (num === den) {
+        canConnect = `⚠️ ${n1} 和 ${n2} 频率完全相同`;
+      } else if (num === 1 || den === 1) {
+        const multiple = num === 1 ? den : num;
+        canConnect = `⚠️ ${n1} 和 ${n2} 成完美的${multiple}倍频率关系`;
+      } else {
+        canConnect = `⚠️ ${n1} 和 ${n2} 形成 ${num}:${den} 的和谐比例`;
+      }
+      canConnect += '，频率完美匹配！\n📝 但这不是本关的星座连线，游戏里不能直接连接哦';
+    }
   }
 
   if (beats !== undefined && beats > 0 && isHarmonic) {
@@ -316,6 +340,34 @@ function generateExplanation(
   }
 
   return { title, canConnect, mathDetail, funFact, visualHint };
+}
+
+function buildMathDetail(f1: number, f2: number, num: number, den: number, raw: number): string {
+  if (num === den) {
+    return `两颗星都以 ${f1.toFixed(1)}Hz 闪烁，比例为 ${num}:${den}。\n数学上: ${f2.toFixed(1)} / ${f1.toFixed(1)} = ${raw.toFixed(3)} ≈ ${num / den}`;
+  }
+  if (num === 1 || den === 1) {
+    const multiple = num === 1 ? den : num;
+    const faster = num > den ? f2 : f1;
+    const slower = num > den ? f1 : f2;
+    const fasterName = num > den ? '星2' : '星1';
+    const slowerName = num > den ? '星1' : '星2';
+    return `${fasterName}(${Math.max(faster, slower).toFixed(1)}Hz) 的频率是 ${slowerName}(${Math.min(faster, slower).toFixed(1)}Hz) 的${multiple}倍。\n比例 ${num}:${den}，数学上: ${f2.toFixed(1)} / ${f1.toFixed(1)} = ${raw.toFixed(3)} ≈ ${num / den}`;
+  }
+  return `频率比例为 ${num}:${den}，这是一个音乐中常见的纯律音程。\n数学上: ${f2.toFixed(1)} / ${f1.toFixed(1)} = ${raw.toFixed(3)} ≈ ${num / den}`;
+}
+
+function buildVisualHint(n1: string, n2: string, num: number, den: number): string {
+  if (num === den) {
+    return `观察：这两颗星的闪烁节奏完全同步，亮暗时刻一模一样。`;
+  }
+  if (num === 1 || den === 1) {
+    const multiple = num === 1 ? den : num;
+    const faster = num > den ? n2 : n1;
+    const slower = num > den ? n1 : n2;
+    return `观察：${faster} 每闪 ${multiple} 次，${slower} 才闪 1 次。数数看，是不是这样？`;
+  }
+  return `观察：${n1} 每闪 ${num} 次时，${n2} 正好闪 ${den} 次。它们会每 ${num * den} 次闪烁"重合"一次！`;
 }
 
 function getFunFactForRatio(num: number, den: number): string {
