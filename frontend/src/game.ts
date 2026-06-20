@@ -6,7 +6,9 @@ import type {
   ScreenPoint,
   CurvePoint,
   BackgroundStar,
-  LevelData
+  LevelData,
+  HarmonicClassroomState,
+  HarmonicAnalysisResult
 } from './types';
 import { Renderer } from './renderer';
 import { getLevel, verifyEdge } from './api';
@@ -15,7 +17,8 @@ import {
   smoothPath,
   simplifyPath,
   distance,
-  clamp
+  clamp,
+  analyzeHarmonicPair
 } from './utils';
 
 const SNAP_DISTANCE = 35;
@@ -30,10 +33,15 @@ export class Game {
   private animationFrameId: number = 0;
   private listeners: Array<() => void> = [];
   private completionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private harmonicClassroom: HarmonicClassroomState = {
+    isActive: false,
+    selectedStarIds: []
+  };
 
   private onLevelChange?: (level: LevelData) => void;
   private onProgressChange?: (current: number, total: number) => void;
   private onComplete?: (desc: string) => void;
+  private onHarmonicClassroomChange?: (state: HarmonicClassroomState, analysis: HarmonicAnalysisResult | null) => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -70,10 +78,12 @@ export class Game {
     onLevelChange?: (level: LevelData) => void;
     onProgressChange?: (current: number, total: number) => void;
     onComplete?: (desc: string) => void;
+    onHarmonicClassroomChange?: (state: HarmonicClassroomState, analysis: HarmonicAnalysisResult | null) => void;
   }): void {
     this.onLevelChange = callbacks.onLevelChange;
     this.onProgressChange = callbacks.onProgressChange;
     this.onComplete = callbacks.onComplete;
+    this.onHarmonicClassroomChange = callbacks.onHarmonicClassroomChange;
   }
 
   private resize(): void {
@@ -142,6 +152,11 @@ export class Game {
 
     const pos = this.getCanvasPos(e);
     const anchor = this.findNearestAnchor(pos);
+
+    if (this.harmonicClassroom.isActive && anchor) {
+      this.harmonicClassroomSelectStar(anchor.id);
+      return;
+    }
 
     if (anchor) {
       this.state.drawState = {
@@ -353,6 +368,74 @@ export class Game {
     return this.state.showFrequencies;
   }
 
+  toggleHarmonicClassroom(): boolean {
+    this.harmonicClassroom.isActive = !this.harmonicClassroom.isActive;
+    if (!this.harmonicClassroom.isActive) {
+      this.harmonicClassroom.selectedStarIds = [];
+    }
+    this.emitHarmonicChange();
+    return this.harmonicClassroom.isActive;
+  }
+
+  getHarmonicClassroomState(): HarmonicClassroomState {
+    return { ...this.harmonicClassroom };
+  }
+
+  harmonicClassroomSelectStar(anchorId: string): void {
+    if (!this.harmonicClassroom.isActive) return;
+    if (!this.state.levelData) return;
+
+    const anchor = this.state.levelData.anchorPoints.find(a => a.id === anchorId);
+    if (!anchor) return;
+    const isValidAnchor = anchor.id.startsWith('a') || anchor.id.startsWith('b') || anchor.id.startsWith('c');
+    if (!isValidAnchor) return;
+
+    const idx = this.harmonicClassroom.selectedStarIds.indexOf(anchorId);
+    if (idx >= 0) {
+      this.harmonicClassroom.selectedStarIds.splice(idx, 1);
+    } else {
+      if (this.harmonicClassroom.selectedStarIds.length >= 2) {
+        this.harmonicClassroom.selectedStarIds.shift();
+      }
+      this.harmonicClassroom.selectedStarIds.push(anchorId);
+    }
+    this.emitHarmonicChange();
+  }
+
+  harmonicClassroomClearSelection(): void {
+    this.harmonicClassroom.selectedStarIds = [];
+    this.emitHarmonicChange();
+  }
+
+  getHarmonicAnalysis(): HarmonicAnalysisResult | null {
+    if (!this.harmonicClassroom.isActive) return null;
+    if (!this.state.levelData) return null;
+    if (this.harmonicClassroom.selectedStarIds.length !== 2) return null;
+
+    const [id1, id2] = this.harmonicClassroom.selectedStarIds;
+    const a1 = this.state.levelData.anchorPoints.find(a => a.id === id1);
+    const a2 = this.state.levelData.anchorPoints.find(a => a.id === id2);
+    if (!a1 || !a2) return null;
+
+    return analyzeHarmonicPair(
+      a1.frequency,
+      a2.frequency,
+      a1.name || a1.id,
+      a2.name || a2.id,
+      this.state.levelData.edges,
+      a1.id,
+      a2.id
+    );
+  }
+
+  private emitHarmonicChange(): void {
+    const analysis = this.getHarmonicAnalysis();
+    this.onHarmonicClassroomChange?.(
+      { ...this.harmonicClassroom },
+      analysis
+    );
+  }
+
   async loadLevel(levelId: number): Promise<boolean> {
     if (this.completionTimeoutId) {
       clearTimeout(this.completionTimeoutId);
@@ -371,6 +454,8 @@ export class Game {
     this.state.drawState = this.createEmptyDrawState();
     this.state.snapTargetId = null;
     this.state.showFrequencies = false;
+    this.harmonicClassroom.selectedStarIds = [];
+    this.emitHarmonicChange();
 
     this.onLevelChange?.(data);
     this.onProgressChange?.(0, data.edges.length);
@@ -463,13 +548,32 @@ export class Game {
         connectedIds.add(c.to);
       });
 
+      const classroomSelected = new Set(this.harmonicClassroom.selectedStarIds);
+      const analysis = this.getHarmonicAnalysis();
+
+      if (this.harmonicClassroom.isActive && this.harmonicClassroom.selectedStarIds.length === 2) {
+        const [id1, id2] = this.harmonicClassroom.selectedStarIds;
+        const a1 = this.state.levelData.anchorPoints.find(a => a.id === id1);
+        const a2 = this.state.levelData.anchorPoints.find(a => a.id === id2);
+        if (a1 && a2) {
+          this.renderer.drawHarmonicClassroomLine(
+            this.renderer.getAnchorScreenPos(a1, this.state.rotationOffset),
+            this.renderer.getAnchorScreenPos(a2, this.state.rotationOffset),
+            analysis?.isHarmonic ?? false,
+            this.state.time
+          );
+        }
+      }
+
       this.renderer.drawAnchorPoints(
         this.state.levelData.anchorPoints,
         this.state.rotationOffset,
         this.state.time,
         this.state.showFrequencies,
         this.state.snapTargetId ?? this.state.drawState.startAnchorId,
-        connectedIds
+        connectedIds,
+        classroomSelected,
+        this.harmonicClassroom.isActive
       );
 
       this.renderer.drawCompletionEffect(this.state.time, this.getProgress());

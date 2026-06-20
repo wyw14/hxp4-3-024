@@ -1,5 +1,5 @@
 import { Game } from './game';
-import type { LevelData } from './types';
+import type { LevelData, HarmonicClassroomState, HarmonicAnalysisResult } from './types';
 import { healthCheck } from './api';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -20,6 +20,26 @@ const btnUndo = document.getElementById('btn-undo') as HTMLButtonElement;
 const btnReset = document.getElementById('btn-reset') as HTMLButtonElement;
 const btnHint = document.getElementById('btn-hint') as HTMLButtonElement;
 const btnNext = document.getElementById('btn-next') as HTMLButtonElement;
+const btnClassroom = document.getElementById('btn-classroom') as HTMLButtonElement;
+const btnClassroomClear = document.getElementById('btn-classroom-clear') as HTMLButtonElement;
+const btnPanelClose = document.getElementById('btn-panel-close') as HTMLButtonElement;
+
+const harmonicPanel = document.getElementById('harmonic-panel')!;
+const slot1 = document.getElementById('slot-1')!;
+const slot2 = document.getElementById('slot-2')!;
+const slot1Name = document.getElementById('slot1-name')!;
+const slot1Freq = document.getElementById('slot1-freq')!;
+const slot2Name = document.getElementById('slot2-name')!;
+const slot2Freq = document.getElementById('slot2-freq')!;
+const ratioTitle = document.getElementById('ratio-title')!;
+const ratioNumbers = document.getElementById('ratio-numbers')!;
+const ratioStatus = document.getElementById('ratio-status')!;
+const explainSection = document.getElementById('explain-section')!;
+const cardResult = document.getElementById('card-result')!;
+const cardMath = document.getElementById('card-math')!;
+const cardFact = document.getElementById('card-fact')!;
+const cardVisual = document.getElementById('card-visual')!;
+const panelTip = document.getElementById('panel-tip')!;
 
 const MAX_LEVELS = 3;
 
@@ -34,6 +54,8 @@ game.setCallbacks({
 
     hintTitleEl.textContent = `关卡 ${level.id}: ${level.name}`;
     hintTextEl.textContent = '寻找闪烁频率成倍数关系的恒星，从一颗星拖动到另一颗星连接它们';
+
+    clearHarmonicPanel(level.anchorPoints);
   },
   onProgressChange: (current: number, total: number) => {
     connectedCountEl.textContent = String(current);
@@ -69,6 +91,9 @@ game.setCallbacks({
     } else {
       btnNext.textContent = '下一关';
     }
+  },
+  onHarmonicClassroomChange: (state: HarmonicClassroomState, analysis: HarmonicAnalysisResult | null) => {
+    updateHarmonicPanel(state, analysis);
   }
 });
 
@@ -85,6 +110,35 @@ btnReset.addEventListener('click', () => {
 btnHint.addEventListener('click', () => {
   const showing = game.toggleFrequencies();
   btnHint.textContent = showing ? '隐藏频率' : '显示频率';
+});
+
+btnClassroom.addEventListener('click', () => {
+  const active = game.toggleHarmonicClassroom();
+  if (active) {
+    btnClassroom.classList.add('classroom-active');
+    btnClassroom.textContent = '🎓 退出课堂';
+    harmonicPanel.classList.add('show');
+    btnHint.textContent = '显示频率';
+  } else {
+    btnClassroom.classList.remove('classroom-active');
+    btnClassroom.textContent = '🎓 谐波课堂';
+    harmonicPanel.classList.remove('show');
+    btnClassroomClear.style.display = 'none';
+  }
+});
+
+btnClassroomClear.addEventListener('click', () => {
+  game.harmonicClassroomClearSelection();
+});
+
+btnPanelClose.addEventListener('click', () => {
+  if (game.toggleHarmonicClassroom()) {
+    game.toggleHarmonicClassroom();
+  }
+  btnClassroom.classList.remove('classroom-active');
+  btnClassroom.textContent = '🎓 谐波课堂';
+  harmonicPanel.classList.remove('show');
+  btnClassroomClear.style.display = 'none';
 });
 
 btnNext.addEventListener('click', async () => {
@@ -125,3 +179,120 @@ init().catch(err => {
   hintTitleEl.textContent = '错误';
   hintTextEl.textContent = String(err);
 });
+
+function clearHarmonicPanel(_anchorPoints: Array<{ id: string; name?: string; frequency: number }> = []): void {
+  slot1.classList.remove('filled-1');
+  slot2.classList.remove('filled-2');
+  slot1Name.textContent = '点击星点选择...';
+  slot1Freq.textContent = '';
+  slot2Name.textContent = '点击星点选择...';
+  slot2Freq.textContent = '';
+  ratioTitle.textContent = '等待选择两颗星';
+  ratioNumbers.textContent = '? : ?';
+  ratioNumbers.classList.remove('harmonic', 'disharmonic');
+  ratioStatus.style.display = 'none';
+  explainSection.style.display = 'none';
+  panelTip.textContent = '💡 在星空中点击两颗主星，分析它们的频率关系';
+  btnClassroomClear.style.display = 'none';
+}
+
+function updateHarmonicPanel(
+  state: HarmonicClassroomState,
+  analysis: HarmonicAnalysisResult | null
+): void {
+  const levelData = (game as any).state?.levelData;
+  const anchors = levelData?.anchorPoints || [];
+
+  const getAnchor = (id: string) => anchors.find((a: any) => a.id === id);
+
+  const star1 = state.selectedStarIds[0] ? getAnchor(state.selectedStarIds[0]) : null;
+  const star2 = state.selectedStarIds[1] ? getAnchor(state.selectedStarIds[1]) : null;
+
+  if (star1) {
+    slot1.classList.add('filled-1');
+    slot1Name.textContent = star1.name || star1.id;
+    slot1Freq.textContent = `频率: ${Number(star1.frequency).toFixed(1)} Hz`;
+  } else {
+    slot1.classList.remove('filled-1');
+    slot1Name.textContent = '点击星点选择...';
+    slot1Freq.textContent = '';
+  }
+
+  if (star2) {
+    slot2.classList.add('filled-2');
+    slot2Name.textContent = star2.name || star2.id;
+    slot2Freq.textContent = `频率: ${Number(star2.frequency).toFixed(1)} Hz`;
+  } else {
+    slot2.classList.remove('filled-2');
+    slot2Name.textContent = '点击星点选择...';
+    slot2Freq.textContent = '';
+  }
+
+  btnClassroomClear.style.display = state.selectedStarIds.length > 0 ? 'inline-block' : 'none';
+
+  if (!state.isActive) {
+    return;
+  }
+
+  if (!analysis) {
+    if (state.selectedStarIds.length === 0) {
+      ratioTitle.textContent = '等待选择两颗星';
+      ratioNumbers.textContent = '? : ?';
+    } else if (state.selectedStarIds.length === 1) {
+      ratioTitle.textContent = '再选一颗星继续分析';
+      ratioNumbers.textContent = '? : ?';
+    }
+    ratioNumbers.classList.remove('harmonic', 'disharmonic');
+    ratioStatus.style.display = 'none';
+    explainSection.style.display = 'none';
+    panelTip.textContent = state.selectedStarIds.length === 1
+      ? '💡 再点击另一颗主星进行对比分析'
+      : '💡 在星空中点击两颗主星，分析它们的频率关系';
+    return;
+  }
+
+  ratioTitle.textContent = analysis.explanation.title;
+  ratioNumbers.classList.remove('harmonic', 'disharmonic');
+
+  const [num, den] = analysis.simplifiedRatio;
+  const g = gcdUi(num, den);
+  const reducedNum = num / g;
+  const reducedDen = den / g;
+
+  if (analysis.isHarmonic) {
+    ratioNumbers.classList.add('harmonic');
+    ratioNumbers.textContent = `${reducedNum} : ${reducedDen}`;
+    ratioStatus.className = 'ratio-status yes';
+    ratioStatus.textContent = '✨ 整数倍谐波 · 可以连接';
+  } else {
+    ratioNumbers.classList.add('disharmonic');
+    ratioNumbers.textContent = `${num} : ${den}`;
+    ratioStatus.className = 'ratio-status no';
+    ratioStatus.textContent = '❌ 非简单整数比 · 无法连接';
+  }
+  ratioStatus.style.display = 'inline-block';
+
+  explainSection.style.display = 'block';
+
+  cardResult.textContent = analysis.explanation.canConnect;
+  cardResult.classList.toggle('fail', !analysis.isHarmonic);
+
+  cardMath.textContent = analysis.explanation.mathDetail;
+  cardFact.textContent = analysis.explanation.funFact;
+  cardVisual.textContent = analysis.explanation.visualHint;
+
+  panelTip.textContent = analysis.isHarmonic
+    ? '🎯 发现谐波共振！可以从一颗星拖动到另一颗星尝试连线'
+    : '💡 试试其他星星组合，寻找成简单整数比的频率';
+}
+
+function gcdUi(a: number, b: number): number {
+  a = Math.abs(Math.round(a));
+  b = Math.abs(Math.round(b));
+  while (b !== 0) {
+    const t = b;
+    b = a % b;
+    a = t;
+  }
+  return a || 1;
+}

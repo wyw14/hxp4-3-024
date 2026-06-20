@@ -146,28 +146,51 @@ export class Renderer {
     time: number,
     showFreq: boolean,
     highlightedId: string | null,
-    connectedIds: Set<string>
+    connectedIds: Set<string>,
+    classroomSelected: Set<string> = new Set(),
+    classroomActive: boolean = false
   ): void {
+    const selectionColors = [
+      { r: 0, g: 255, b: 180 },
+      { r: 255, g: 120, b: 220 }
+    ];
+
     for (const anchor of anchors) {
       const pos = this.getAnchorScreenPos(anchor, rotation);
       const twinkle = Math.sin(time * anchor.frequency * 0.8) * 0.3 + 0.7;
       const brightness = (anchor.baseBrightness ?? 0.7) * twinkle;
-      const size = (anchor.size ?? 3) * (highlightedId === anchor.id ? 1.8 : 1);
+      const isClassroomSelected = classroomSelected.has(anchor.id);
+      const size = (anchor.size ?? 3) * (highlightedId === anchor.id ? 1.8 : isClassroomSelected ? 1.6 : 1);
 
       const isAnchor = anchor.id.startsWith('a') || anchor.id.startsWith('b') || anchor.id.startsWith('c');
-      const baseColor = isAnchor ? { r: 200, g: 220, b: 255 } : { r: 180, g: 180, b: 200 };
+      let baseColor = isAnchor ? { r: 200, g: 220, b: 255 } : { r: 180, g: 180, b: 200 };
       const isConnected = connectedIds.has(anchor.id);
-      const connColor = isConnected ? { r: 255, g: 215, b: 100 } : baseColor;
+      if (isConnected) baseColor = { r: 255, g: 215, b: 100 };
 
-      const glowR = size * 8;
+      let connColor = baseColor;
+      if (isClassroomSelected) {
+        const idx = Array.from(classroomSelected).indexOf(anchor.id);
+        connColor = selectionColors[idx] || selectionColors[0];
+      }
+
+      const glowR = size * (isClassroomSelected ? 12 : 8);
       const glow = this.ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, glowR);
-      glow.addColorStop(0, `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, ${brightness * 0.5})`);
-      glow.addColorStop(0.4, `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, ${brightness * 0.15})`);
+      glow.addColorStop(0, `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, ${brightness * (isClassroomSelected ? 0.7 : 0.5)})`);
+      glow.addColorStop(0.4, `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, ${brightness * (isClassroomSelected ? 0.3 : 0.15)})`);
       glow.addColorStop(1, `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, 0)`);
       this.ctx.beginPath();
       this.ctx.arc(pos.x, pos.y, glowR, 0, Math.PI * 2);
       this.ctx.fillStyle = glow;
       this.ctx.fill();
+
+      if (isClassroomSelected) {
+        const pulseR = size * 5 + Math.sin(time * 4) * size * 1.5;
+        this.ctx.beginPath();
+        this.ctx.arc(pos.x, pos.y, pulseR, 0, Math.PI * 2);
+        this.ctx.strokeStyle = `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, ${0.4 + Math.sin(time * 3) * 0.2})`;
+        this.ctx.lineWidth = 2.5;
+        this.ctx.stroke();
+      }
 
       this.ctx.beginPath();
       this.ctx.arc(pos.x, pos.y, size, 0, Math.PI * 2);
@@ -189,12 +212,76 @@ export class Renderer {
         this.ctx.setLineDash([]);
       }
 
-      if (showFreq && isAnchor) {
+      if (isClassroomSelected) {
+        const idx = Array.from(classroomSelected).indexOf(anchor.id);
+        const label = idx === 0 ? '①' : '②';
+        this.ctx.font = 'bold 16px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = `rgba(${connColor.r}, ${connColor.g}, ${connColor.b}, 1)`;
+        this.ctx.fillText(label, pos.x, pos.y - size - 18);
+      }
+
+      if ((showFreq || classroomActive) && isAnchor) {
         this.ctx.font = '11px monospace';
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = `rgba(160, 196, 255, ${brightness * 0.9})`;
-        this.ctx.fillText(`${anchor.frequency.toFixed(1)}Hz`, pos.x, pos.y - size - 10);
+        this.ctx.fillText(`${anchor.frequency.toFixed(1)}Hz`, pos.x, pos.y + size + 16);
       }
+    }
+  }
+
+  drawHarmonicClassroomLine(
+    p1: ScreenPoint,
+    p2: ScreenPoint,
+    isHarmonic: boolean,
+    time: number
+  ): void {
+    const pulse = Math.sin(time * 3) * 0.3 + 0.7;
+
+    const color = isHarmonic
+      ? { r: 100, g: 255, b: 180 }
+      : { r: 255, g: 100, b: 100 };
+
+    const dashLength = 10;
+    const dashOffset = (time * 40) % (dashLength * 2);
+
+    for (let pass = 3; pass >= 1; pass--) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(p1.x, p1.y);
+      this.ctx.lineTo(p2.x, p2.y);
+      const alpha = (isHarmonic ? 0.4 : 0.25) * pulse / pass;
+      this.ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+      this.ctx.lineWidth = 4 + pass * 6;
+      this.ctx.lineCap = 'round';
+      this.ctx.stroke();
+    }
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(p1.x, p1.y);
+    this.ctx.lineTo(p2.x, p2.y);
+    this.ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${(isHarmonic ? 0.9 : 0.7) * pulse})`;
+    this.ctx.lineWidth = 3;
+    this.ctx.lineCap = 'round';
+    this.ctx.setLineDash([dashLength, dashLength]);
+    this.ctx.lineDashOffset = dashOffset;
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+
+    const waveCount = 5;
+    const waveAmp = 8;
+    for (let i = 0; i <= waveCount; i++) {
+      const t = i / waveCount;
+      const px = p1.x + (p2.x - p1.x) * t;
+      const py = p1.y + (p2.y - p1.y) * t;
+      const wave = Math.sin(time * 5 + i * 1.2) * waveAmp * pulse;
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const perpX = Math.cos(angle + Math.PI / 2) * wave;
+      const perpY = Math.sin(angle + Math.PI / 2) * wave;
+
+      this.ctx.beginPath();
+      this.ctx.arc(px + perpX, py + perpY, 2.5, 0, Math.PI * 2);
+      this.ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.8 * pulse})`;
+      this.ctx.fill();
     }
   }
 

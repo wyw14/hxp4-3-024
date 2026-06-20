@@ -87,3 +87,10 @@ export interface VerifyResult {
   frequencies?: Record<string, number>;
   ratio?: [number, number] | null;
 }
+
+export interface HarmonicClassroomState {
+  isActive: boolean;
+  selectedStarIds: string[];
+}
+
+export type HarmonicAnalysisResult = import('./utils').HarmonicAnalysis;
